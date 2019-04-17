@@ -1,6 +1,6 @@
 import math
 from abc import ABCMeta, abstractmethod
-import config
+from . import config
 
 
 class Line:
@@ -63,13 +63,16 @@ class Model:
                     new_w = w * layer.strides[1] + max(layer.kernel_size[1] - layer.strides[1], 0)
                 self.feature_maps.append(FeatureMap3D(new_h, new_w, filters))
             else:
-                if layer.padding == "same":
-                    new_h = math.ceil(h / layer.strides[0])
-                    new_w = math.ceil(w / layer.strides[1])
+                if layer.padding is not None and layer.strides is not None and layer.kernel_size is not None:
+                    if layer.padding == "same":
+                        new_h = math.ceil(h / layer.strides[0])
+                        new_w = math.ceil(w / layer.strides[1])
+                    else:
+                        new_h = math.ceil((h - layer.kernel_size[0] + 1) / layer.strides[0])
+                        new_w = math.ceil((w - layer.kernel_size[1] + 1) / layer.strides[1])
+                    self.feature_maps.append(FeatureMap3D(new_h, new_w, filters))
                 else:
-                    new_h = math.ceil((h - layer.kernel_size[0] + 1) / layer.strides[0])
-                    new_w = math.ceil((w - layer.kernel_size[1] + 1) / layer.strides[1])
-                self.feature_maps.append(FeatureMap3D(new_h, new_w, filters))
+                    self.feature_maps.append(FeatureMap1D(layer.filters))
         else:
             self.feature_maps.append(FeatureMap1D(layer.filters))
 
@@ -236,7 +239,7 @@ class Layer:
         self.objects.append(Line(start1[0], start1[1], end[0], end[1], color=line_color))
         self.objects.append(Line(start2[0], start2[1], end[0], end[1], color=line_color))
 
-        x = (self.prev_feature_map.right + self.next_feature_map.left) / 2
+        x = (self.next_feature_map.right + self.next_feature_map.left) / 2
         y = max(self.prev_feature_map.get_bottom(), self.next_feature_map.get_bottom()) + config.text_margin \
             + config.text_size
 
@@ -250,13 +253,13 @@ class Layer:
 
 class Conv2D(Layer):
     def get_description(self):
-        return ["conv{}x{}, {}".format(self.kernel_size[0], self.kernel_size[1], self.filters),
+        return ["Conv{}x{}, {}".format(self.kernel_size[0], self.kernel_size[1], self.filters),
                 "stride {}".format(self.strides)]
 
 
 class Deconv2D(Layer):
     def get_description(self):
-        return ["deconv{}x{}, {}".format(self.kernel_size[0], self.kernel_size[1], self.filters),
+        return ["Deconv{}x{}, {}".format(self.kernel_size[0], self.kernel_size[1], self.filters),
                 "stride {}".format(self.strides)]
 
 
@@ -269,13 +272,13 @@ class PoolingLayer(Layer):
 
 class AveragePooling2D(PoolingLayer):
     def get_description(self):
-        return ["avepool{}x{}".format(self.kernel_size[0], self.kernel_size[1]),
+        return ["Av.P.{}x{}".format(self.kernel_size[0], self.kernel_size[1]),
                 "stride {}".format(self.strides)]
 
 
 class MaxPooling2D(PoolingLayer):
     def get_description(self):
-        return ["maxpool{}x{}".format(self.kernel_size[0], self.kernel_size[1]),
+        return ["M.P.{}x{}".format(self.kernel_size[0], self.kernel_size[1]),
                 "stride {}".format(self.strides)]
 
 
@@ -301,12 +304,21 @@ class Flatten(Layer):
         super(Flatten, self).__init__()
 
     def get_description(self):
-        return ["flatten"]
+        return ["Flatten"]
 
     def set_objects(self):
-        x = (self.prev_feature_map.right + self.next_feature_map.left) / 2
-        y = max(self.prev_feature_map.get_bottom(), self.next_feature_map.get_bottom()) + config.text_margin \
-            + config.text_size
+        x1 = self.prev_feature_map.right
+        y11 = - math.pow(self.prev_feature_map.c, config.channel_scale) / 2
+        y12 = math.pow(self.prev_feature_map.c, config.channel_scale) / 2
+        x2 = self.next_feature_map.left
+        y21 = - math.pow(self.next_feature_map.c, config.channel_scale) / 2
+        y22 = math.pow(self.next_feature_map.c, config.channel_scale) / 2
+        line_color = config.line_color_layer
+        self.objects.append(Line(x1, y11, x2, y21, color=line_color, dasharray=2))
+        self.objects.append(Line(x1, y12, x2, y22, color=line_color, dasharray=2))
+
+        x = (self.next_feature_map.right + self.next_feature_map.left) / 2
+        y = self.next_feature_map.get_bottom() + config.text_margin + config.text_size
 
         for i, description in enumerate(self.get_description()):
             self.objects.append(Text(x, y + i * config.text_size, "{}".format(description),
@@ -318,7 +330,7 @@ class Dense(Layer):
         super(Dense, self).__init__(filters=units)
 
     def get_description(self):
-        return ["dense"]
+        return ["Dense"]
 
     def set_objects(self):
         x1 = self.prev_feature_map.right
@@ -330,9 +342,8 @@ class Dense(Layer):
         self.objects.append(Line(x1, y11, x2, y2, color=line_color, dasharray=2))
         self.objects.append(Line(x1, y12, x2, y2, color=line_color, dasharray=2))
 
-        x = (self.prev_feature_map.right + self.next_feature_map.left) / 2
-        y = max(self.prev_feature_map.get_bottom(), self.next_feature_map.get_bottom()) + config.text_margin \
-            + config.text_size
+        x = (self.next_feature_map.right + self.next_feature_map.left) / 2
+        y = self.next_feature_map.get_bottom() + config.text_margin + config.text_size
 
         for i, description in enumerate(self.get_description()):
             self.objects.append(Text(x, y + i * config.text_size, "{}".format(description),

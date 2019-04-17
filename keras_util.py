@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-from keras_models import AlexNet
-from convnet_drawer import Model, Conv2D, MaxPooling2D, Flatten, Dense, GlobalAveragePooling2D
+from .keras_models import AlexNet
+from .convnet_drawer import Model, Conv2D, MaxPooling2D, Flatten, Dense, GlobalAveragePooling2D
 
 
 def get_dense_obj(class_object, config):
@@ -25,7 +25,11 @@ def get_conv2d_obj(class_object, config):
 
 
 def is_class_object(class_name):
-    return eval(class_name)
+    try:
+        return eval(class_name)
+    except NameError:
+        # Can't find class by name
+        return None
 
 
 def convert_drawer_model(model):
@@ -46,7 +50,8 @@ def convert_drawer_model(model):
                 dense = get_dense_obj(class_obj, class_config)
                 figure.add(dense)
             else:
-                figure.add(class_obj())
+                if class_obj is not None:
+                    figure.add(class_obj()) 
         else:
             raise ValueError
 
